@@ -11,6 +11,35 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check plugin version was updated
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          plugin_dir=nla-im-button-embed
+          plugin_file="$plugin_dir/nla-im-button-embed.php"
+          if git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- "$plugin_dir"; then
+            exit 0
+          fi
+
+          old_version=$(git show "$BASE_SHA:$plugin_file" | sed -n 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*//p' | head -n 1)
+          new_version=$(sed -n 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*//p' "$plugin_file" | head -n 1)
+          runtime_version=$(awk -F"'" '/NLA_TOOLS__PLUGIN_VER/ { print $4; exit }' "$plugin_file")
+
+          if [ -z "$old_version" ] || [ -z "$new_version" ] || [ -z "$runtime_version" ]; then
+            echo "Could not read the plugin version from $plugin_file." >&2
+            exit 1
+          fi
+          if [ "$old_version" = "$new_version" ]; then
+            echo "Plugin files changed, but the Version header is still $new_version. Bump it for this PR." >&2
+            exit 1
+          fi
+          if [ "$new_version" != "$runtime_version" ]; then
+            echo "Plugin Version header ($new_version) and runtime version ($runtime_version) must match." >&2
+            exit 1
+          fi
+
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
